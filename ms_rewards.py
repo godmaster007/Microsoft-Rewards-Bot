@@ -11,6 +11,7 @@ import logging
 import os
 import platform
 import random
+import sys
 import time
 import zipfile
 from datetime import datetime, timedelta
@@ -48,9 +49,9 @@ def check_python_version():
     """
     Ensure the correct version of Python is being used.
     """
-    minimum_version = ('3', '6')
-    if platform.python_version_tuple() < minimum_version:
-        message = 'Only Python %s.%s and above is supported.' % minimum_version
+    minimum_version = (3, 6)
+    if sys.version_info < minimum_version:
+        message = f'Only Python {".".join(map(str, minimum_version))} and above is supported.'
         raise Exception(message)
 
 
@@ -76,13 +77,27 @@ def _log_level_string_to_int(log_level_string):
 
 def init_logging(log_level):
     # gets dir path of python script, not cwd, for execution on cron
-    os.chdir(os.path.dirname(os.path.realpath(__file__)))
-    os.makedirs('logs', exist_ok=True)
-    log_path = os.path.join('logs', 'ms_rewards.log')
-    logging.basicConfig(
-        filename=log_path,
-        level=log_level,
-        format='%(asctime)s :: %(levelname)s :: %(name)s :: %(message)s')
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    logs_dir = os.path.join(script_dir, 'logs')
+    if not os.path.isdir(logs_dir):
+        os.makedirs(logs_dir)
+    log_path = os.path.join(logs_dir, 'ms_rewards.log')
+
+    # More robust logging setup
+    logger = logging.getLogger()
+    logger.setLevel(log_level)
+    
+    # Remove any existing handlers
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    # Create a file handler
+    handler = logging.FileHandler(log_path, 'a', 'utf-8')
+    formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(name)s :: %(message)s')
+    handler.setFormatter(formatter)
+    
+    # Add the handler to the logger
+    logger.addHandler(handler)
 
 
 def parse_args():
@@ -176,20 +191,29 @@ def get_search_terms():
         try:
             # get URL, get api response and parse with json
             url = f'https://trends.google.com/trends/api/dailytrends?hl=en-US&ed={date}&geo=US&ns=15'
-            request = requests.get(url)
-            response = json.loads(request.text[5:])
+            response = requests.get(url)
+            response.raise_for_status()  # Raise an exception for bad status codes
+
+            # Check if the response is long enough
+            if len(response.text) <= 5:
+                logging.warning(f"Google Trends response for date {date} is too short: {response.text}")
+                continue
+
+            # The response from Google Trends is prefixed with )]}'
+            json_data = json.loads(response.text[5:])
+            
             # get all trending searches with their related queries
-            for topic in response['default']['trendingSearchesDays'][0]['trendingSearches']:
+            for topic in json_data['default']['trendingSearchesDays'][0]['trendingSearches']:
                 add_new_search_term(
                     search_terms, topic['title']['query'].lower())
                 for related_topic in topic['relatedQueries']:
                     add_new_search_term(
                         search_terms, related_topic['query'].lower())
             time.sleep(random.randint(3, 5))
-        except RequestException:
-            logging.error('Error retrieving google trends json.')
-        except KeyError:
-            logging.error('Cannot parse, JSON keys are modified.')
+        except RequestException as e:
+            logging.error(f'Error retrieving Google Trends JSON: {e}')
+        except (KeyError, json.JSONDecodeError) as e:
+            logging.error(f'Cannot parse Google Trends JSON. Error: {e}. Response text: {response.text}')
     # get unique terms and return a list
     logging.info(msg=f'# of search items: {len(search_terms)}\n')
     return list(set(search_terms))
