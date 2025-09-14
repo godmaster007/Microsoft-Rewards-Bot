@@ -14,6 +14,7 @@ import random
 import sys
 import time
 import zipfile
+import shutil
 from datetime import datetime, timedelta
 
 import requests
@@ -28,6 +29,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
+import tempfile
+from selenium.webdriver.chrome.service import Service
 
 # URLs
 BING_SEARCH_URL = 'https://www.bing.com/search'
@@ -76,28 +79,70 @@ def _log_level_string_to_int(log_level_string):
 
 
 def init_logging(log_level):
-    # gets dir path of python script, not cwd, for execution on cron
+    # get absolute paths based on script location to avoid relative path issues
     script_dir = os.path.dirname(os.path.realpath(__file__))
     logs_dir = os.path.join(script_dir, 'logs')
-    if not os.path.isdir(logs_dir):
-        os.makedirs(logs_dir)
+    os.makedirs(logs_dir, exist_ok=True)
     log_path = os.path.join(logs_dir, 'ms_rewards.log')
 
-    # More robust logging setup
+    # Configure a stable console-based logger to avoid file descriptor issues
     logger = logging.getLogger()
     logger.setLevel(log_level)
-    
-    # Remove any existing handlers
-    if logger.hasHandlers():
-        logger.handlers.clear()
 
-    # Create a file handler
-    handler = logging.FileHandler(log_path, 'a', 'utf-8')
-    formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(name)s :: %(message)s')
-    handler.setFormatter(formatter)
-    
-    # Add the handler to the logger
-    logger.addHandler(handler)
+    # Close and remove existing handlers to avoid stale handlers
+    for h in list(logger.handlers):
+        try:
+            h.flush()
+            h.close()
+        except Exception:
+            pass
+        logger.removeHandler(h)
+
+    # Prefer writing logs to a temp file to avoid potential issues with stderr/stderr being closed
+    temp_log_path = os.path.join(tempfile.gettempdir(), 'ms_rewards_run.log')
+    try:
+        file_handler = logging.FileHandler(temp_log_path, 'a', encoding='utf-8')
+        file_formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(name)s :: %(message)s')
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+    except Exception:
+        # Fallback to a no-op StreamHandler that swallows errors
+        class _SafeStream:
+            def write(self, s):
+                try:
+                    print(s, end='')
+                except Exception:
+                    pass
+            def flush(self):
+                try:
+                    pass
+                except Exception:
+                    pass
+        safe_handler = logging.StreamHandler(stream=_SafeStream())
+        safe_formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(name)s :: %(message)s')
+        safe_handler.setFormatter(safe_formatter)
+        logger.addHandler(safe_handler)
+
+    # Provide safe logging wrappers that write directly to the temp file to avoid handler issues
+    def _safe_call(level_name, msg):
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        line = f"{timestamp} :: {level_name} :: {msg}\n"
+        try:
+            with open(temp_log_path, 'a', encoding='utf-8') as fh:
+                fh.write(line)
+        except Exception:
+            try:
+                # fallback to printing
+                print(line, end='')
+            except Exception:
+                pass
+
+    logging.info = lambda msg, *a, **k: _safe_call('INFO', msg)
+    logging.warning = lambda msg, *a, **k: _safe_call('WARNING', msg)
+    logging.error = lambda msg, *a, **k: _safe_call('ERROR', msg)
+    logging.debug = lambda msg, *a, **k: _safe_call('DEBUG', msg)
+    logging.critical = lambda msg, *a, **k: _safe_call('CRITICAL', msg)
+    logging.exception = lambda msg, *a, **k: _safe_call('EXCEPTION', msg)
 
 
 def parse_args():
@@ -191,7 +236,7 @@ def get_search_terms():
         try:
             # get URL, get api response and parse with json
             url = f'https://trends.google.com/trends/api/dailytrends?hl=en-US&ed={date}&geo=US&ns=15'
-            response = requests.get(url)
+            response = requests.get(url, timeout=10)
             response.raise_for_status()  # Raise an exception for bad status codes
 
             # Check if the response is long enough
@@ -243,7 +288,8 @@ def download_driver(driver_path, system):
         url = "https://chromedriver.storage.googleapis.com/{}/chromedriver_linux64.zip".format(
             latest_version)
 
-    response = requests.get(url, stream=True)
+    response = requests.get(url, stream=True, timeout=30)
+    response.raise_for_status()
     zip_file_path = os.path.join(os.path.dirname(
         driver_path), os.path.basename(url))
     with open(zip_file_path, "wb") as handle:
@@ -255,11 +301,31 @@ def download_driver(driver_path, system):
         zip_file.extractall(extracted_dir)
     os.remove(zip_file_path)
 
-    driver = os.listdir(extracted_dir)[0]
-    os.rename(os.path.join(extracted_dir, driver), driver_path)
-    os.rmdir(extracted_dir)
+    # The extracted directory may contain a folder (chromedriver_win32) with the executable inside.
+    # Search recursively for an executable file named chromedriver* and move it to driver_path.
+    found = None
+    for root, dirs, files in os.walk(extracted_dir):
+        for f in files:
+            if f.lower().startswith('chromedriver'):
+                found = os.path.join(root, f)
+                break
+        if found:
+            break
+    if not found:
+        raise FileNotFoundError(f'Could not find chromedriver in extracted zip at {extracted_dir}')
+    os.replace(found, driver_path)
+    # remove the entire extracted directory tree
+    try:
+        shutil.rmtree(extracted_dir)
+    except Exception:
+        # best effort cleanup
+        pass
 
-    os.chmod(driver_path, 0o755)
+    try:
+        os.chmod(driver_path, 0o755)
+    except Exception:
+        # chmod may fail on Windows; ignore
+        pass
     # way to note which chromedriver version is installed
     open(os.path.join(os.path.dirname(driver_path),
                       "{}.txt".format(latest_version)), "w").close()
@@ -272,8 +338,16 @@ def browser_setup(headless_mode, user_agent):
     :param user_agent: String
     :return: webdriver obj
     """
-    os.makedirs('drivers', exist_ok=True)
-    path = os.path.join('drivers', 'chromedriver')
+    # use absolute drivers directory next to the script to avoid cwd issues
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    drivers_dir = os.path.join(script_dir, 'drivers')
+    try:
+        os.makedirs(drivers_dir, exist_ok=True)
+    except Exception:
+        # fallback to temp directory if repo path cannot be created
+        drivers_dir = os.path.join(tempfile.gettempdir(), 'ms_rewards_drivers')
+        os.makedirs(drivers_dir, exist_ok=True)
+    path = os.path.join(drivers_dir, 'chromedriver')
     system = platform.system()
     if system == "Windows":
         if not path.endswith(".exe"):
@@ -298,7 +372,9 @@ def browser_setup(headless_mode, user_agent):
     if headless_mode:
         options.add_argument('--headless')
 
-    chrome_obj = webdriver.Chrome(path, options=options)
+    # initialize chrome webdriver with explicit Service (works with selenium 4+ and 3)
+    service = Service(path)
+    chrome_obj = webdriver.Chrome(service=service, options=options)
 
     return chrome_obj
 
