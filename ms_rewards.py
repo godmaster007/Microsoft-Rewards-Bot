@@ -321,7 +321,7 @@ def find_by_id(obj_id):
     :param obj_id:
     :return: List of all nodes matching provided ID
     """
-    return browser.find_elements_by_id(obj_id)
+    return browser.find_elements(By.ID, obj_id)
 
 
 def find_by_xpath(selector):
@@ -330,7 +330,7 @@ def find_by_xpath(selector):
     :param selector: xpath string
     :return: returns a list of all matching selenium objects
     """
-    return browser.find_elements_by_xpath(selector)
+    return browser.find_elements(By.XPATH, selector)
 
 
 def find_by_class(selector):
@@ -339,7 +339,7 @@ def find_by_class(selector):
     :param selector: Class selector of html obj
     :return: returns a list of all matching selenium objects
     """
-    return browser.find_elements_by_class_name(selector)
+    return browser.find_elements(By.CLASS_NAME, selector)
 
 
 def find_by_css(selector):
@@ -348,51 +348,37 @@ def find_by_css(selector):
     :param selector: CSS selector of html node obj
     :return: returns a list of all matching selenium objects
     """
-    return browser.find_elements_by_css_selector(selector)
-
-
-# def wait_until_visible(by_, selector, time_to_wait=10):
-#     """
-#     Wait until all objects matching selector are visible
-#     :param by_: Select by ID, XPATH, CSS Selector, other, from By module
-#     :param selector: string of selector
-#     :param time_to_wait: Int time to wait
-#     :return: None
-#     """
-#     try:
-#         WebDriverWait(browser, time_to_wait).until(ec.visibility_of_element_located((by_, selector)))
-#     except TimeoutException:
-#         logging.exception(msg=f'{selector} element Not Visible - Timeout Exception', exc_info=False)
-#         screenshot(selector)
-#         browser.refresh()
-#     except UnexpectedAlertPresentException:
-#         # FIXME
-#         browser.switch_to.alert.dismiss()
-#         # logging.exception(msg=f'{selector} element Not Visible - Unexpected Alert Exception', exc_info=False)
-#         # screenshot(selector)
-#         # browser.refresh()
-#     except WebDriverException:
-#         logging.exception(msg=f'Webdriver Error for {selector} object')
-#         screenshot(selector)
-#         browser.refresh()
+    return browser.find_elements(By.CSS_SELECTOR, selector)
 
 
 def wait_until_visible(by_, selector, time_to_wait=10):
     """
-    Searches for selector and if found, end the loop
-    Else, keep repeating every 2 seconds until time elapsed, then refresh page
-    :param by_: string which tag to search by
-    :param selector: string selector
-    :param time_to_wait: int time to wait
-    :return: Boolean if selector is found
+    Wait until all objects matching selector are visible
+    :param by_: Select by ID, XPATH, CSS Selector, other, from By module
+    :param selector: string of selector
+    :param time_to_wait: Int time to wait
+    :return: None
     """
-    start_time = time.time()
-    while (time.time() - start_time) < time_to_wait:
-        if browser.find_elements(by=by_, value=selector):
-            return True
-        browser.refresh()  # for other checks besides points url
-        time.sleep(2)
-    return False
+    try:
+        WebDriverWait(browser, time_to_wait).until(ec.visibility_of_element_located((by_, selector)))
+        return True
+    except TimeoutException:
+        logging.exception(msg=f'{selector} element Not Visible - Timeout Exception', exc_info=False)
+        screenshot(selector)
+        browser.refresh()
+        return False
+    except UnexpectedAlertPresentException:
+        # FIXME
+        try:
+            browser.switch_to.alert.dismiss()
+        except Exception:
+            pass
+        return False
+    except WebDriverException:
+        logging.exception(msg=f'Webdriver Error for {selector} object')
+        screenshot(selector)
+        browser.refresh()
+        return False
 
 
 def wait_until_clickable(by_, selector, time_to_wait=10):
@@ -412,10 +398,10 @@ def wait_until_clickable(by_, selector, time_to_wait=10):
         screenshot(selector)
     except UnexpectedAlertPresentException:
         # FIXME
-        browser.switch_to.alert.dismiss()
-        # logging.exception(msg=f'{selector} element Not Visible - Unexpected Alert Exception', exc_info=False)
-        # screenshot(selector)
-        # browser.refresh()
+        try:
+            browser.switch_to.alert.dismiss()
+        except Exception:
+            pass
     except WebDriverException:
         logging.exception(msg=f'Webdriver Error for {selector} object')
         screenshot(selector)
@@ -429,7 +415,7 @@ def send_key_by_name(name, key):
     :return: None
     """
     try:
-        browser.find_element_by_name(name).send_keys(key)
+        browser.find_element(By.NAME, name).send_keys(key)
     except (ElementNotVisibleException, ElementClickInterceptedException, ElementNotInteractableException):
         logging.exception(
             msg=f'Send key by name to {name} element not visible or clickable.')
@@ -449,7 +435,7 @@ def send_key_by_id(obj_id, key):
     :return: None
     """
     try:
-        browser.find_element_by_id(obj_id).send_keys(key)
+        browser.find_element(By.ID, obj_id).send_keys(key)
     except (ElementNotVisibleException, ElementClickInterceptedException, ElementNotInteractableException):
         logging.exception(
             msg=f'Send key by ID to {obj_id} element not visible or clickable.')
@@ -466,7 +452,6 @@ def send_key_by_id(obj_id, key):
 def scrollToBottom(browser):
     """Scroll to bottom of the page"""
     try:
-        browser.execute_script("scrollBy(0,250);")
         browser.execute_script(
             "window.scrollTo(0, document.body.scrollHeight);")
     except Exception as e:
@@ -476,7 +461,7 @@ def scrollToBottom(browser):
 def scrollToTop(driver):
     """Scroll to top of the page"""
     try:
-        browser.find_element_by_tag_name('body').send_keys(Keys.HOME)
+        browser.execute_script("window.scrollTo(0, 0);")
     except Exception as e:
         print('Exception when scrolling : %s' % e)
 
@@ -488,11 +473,11 @@ def click_by_class(selector):
     :return: None
     """
     try:
-        browser.find_element_by_class_name(selector).click()
+        browser.find_element(By.CLASS_NAME, selector).click()
     except (ElementNotVisibleException, ElementClickInterceptedException, ElementNotInteractableException):
         logging.exception(
             msg=f'Send key by class to {selector} element not visible or clickable.')
-        jsClick(browser.find_element_by_class_name(selector))
+        jsClick(browser.find_element(By.CLASS_NAME, selector))
     except WebDriverException:
         logging.exception(
             msg=f'Webdriver Error for send key by class to {selector} object')
@@ -505,11 +490,11 @@ def click_by_id(obj_id):
     :return: None
     """
     try:
-        browser.find_element_by_id(obj_id).click()
+        browser.find_element(By.ID, obj_id).click()
     except (ElementNotVisibleException, ElementClickInterceptedException, ElementNotInteractableException):
         logging.exception(
             msg=f'Click by ID to {obj_id} element not visible or clickable.')
-        jsClick(browser.find_element_by_id(obj_id))
+        jsClick(browser.find_element(By.ID, obj_id))
     except WebDriverException:
         logging.exception(
             msg=f'Webdriver Error for click by ID to {obj_id} object')
@@ -522,11 +507,11 @@ def click_by_xpath(xpath):
     :return: None
     """
     try:
-        browser.find_element_by_xpath(xpath).click()
+        browser.find_element(By.XPATH, xpath).click()
     except (ElementNotVisibleException, ElementClickInterceptedException, ElementNotInteractableException):
         logging.exception(
             msg=f'Click by xpath to {xpath} element not visible or clickable.')
-        jsClick(browser.find_element_by_xpath(xpath))
+        jsClick(browser.find_element(By.XPATH, xpath))
     except WebDriverException:
         logging.exception(
             msg=f'Webdriver Error for click by xpath to {xpath} object')
@@ -539,7 +524,7 @@ def clear_by_id(obj_id):
     :return: None
     """
     try:
-        browser.find_element_by_id(obj_id).clear()
+        browser.find_element(By.ID, obj_id).clear()
     except (ElementNotVisibleException, ElementNotInteractableException):
         logging.exception(
             msg=f'Clear by ID to {obj_id} element not visible or clickable.')
@@ -557,8 +542,7 @@ def jsClick(element):
     try:
         browser.execute_script("arguments[0].click();", element)
     except Exception as e:
-        logging.exception(msg=f'Exception when JS click')
-        pass
+        logging.exception(msg=f'Exception when JS click: {e}')
 
 
 def main_window():
@@ -567,13 +551,14 @@ def main_window():
     :return: None
     """
     try:
-        for i in range(1, len(browser.window_handles)):
-            browser.switch_to.window(browser.window_handles[-1])
+        # close all windows except the main one
+        main_handle = browser.window_handles[0]
+        for handle in browser.window_handles[1:]:
+            browser.switch_to.window(handle)
             browser.close()
+        browser.switch_to.window(main_handle)
     except WebDriverException:
         logging.error('Error when switching to main_window')
-    finally:
-        browser.switch_to.window(browser.window_handles[0])
 
 
 def screenshot(selector):
@@ -668,16 +653,16 @@ def iter_dailies():
     """
     browser.get(DASHBOARD_URL)
     time.sleep(4)
-    open_offers = browser.find_elements_by_xpath(
+    open_offers = browser.find_elements(By.XPATH, 
         '//span[contains(@class, "mee-icon-AddMedium")]')
     if open_offers:
         logging.info(msg=f'Number of open offers: {len(open_offers)}')
         # get common parent element of open_offers
-        parent_elements = [open_offer.find_element_by_xpath(
+        parent_elements = [open_offer.find_element(By.XPATH, 
             '..//..//..//..') for open_offer in open_offers]
         # get points links from parent, # finds link (a) descendant of selected node
         offer_links = [
-            parent.find_element_by_xpath(
+            parent.find_element(By.XPATH, 
                 'div[contains(@class,"actionLink")]//descendant::a')
             for parent in parent_elements
         ]
@@ -719,7 +704,7 @@ def iter_dailies():
         browser.get(DASHBOARD_URL)
         time.sleep(0.1)
         wait_until_visible(By.TAG_NAME, 'body', 10)  # checks for page load
-        open_offers = browser.find_elements_by_xpath(
+        open_offers = browser.find_elements(By.XPATH, 
             '//span[contains(@class, "mee-icon-AddMedium")]')
         logging.info(
             msg=f'Number of incomplete offers remaining: {len(open_offers)}')
@@ -731,7 +716,7 @@ def explore_daily():
     # needs try/except bc these functions don't have exception handling built in.
     try:
         # select html to send commands to
-        html = browser.find_element_by_tag_name('html')
+        html = browser.find_element(By.TAG_NAME, 'html')
         # scroll up and down to trigger points
         for i in range(3):
             html.send_keys(Keys.END)
@@ -789,7 +774,7 @@ def click_quiz():
     """
     for i in range(10):
         if find_by_css('.cico.btCloseBack'):
-            find_by_css('.cico.btCloseBack')[0].click()[0].click()
+            find_by_css('.cico.btCloseBack')[0].click()
             logging.debug(msg='Quiz popped up during a click quiz...')
         choices = find_by_class('wk_Circle')
         # click answer
@@ -853,7 +838,7 @@ def sign_in_prompt():
     if sign_in_prompt_msg:
         logging.info(msg='Detected sign-in prompt')
         wait_until_clickable(By.LINK_TEXT, 'Sign in', 15)
-        browser.find_element_by_link_text('Sign in').click()
+        browser.find_element(By.LINK_TEXT, 'Sign in').click()
         logging.info(msg='Clicked sign-in prompt')
         time.sleep(4)
 
@@ -870,7 +855,7 @@ def get_point_total(pc=False, mobile=False, log=False):
     time.sleep(4)
     wait_until_visible(By.CLASS_NAME, 'pcsearch', 10)
     if find_by_class('pcsearch'):
-        element = browser.find_elements_by_class_name('pcsearch')
+        element = browser.find_elements(By.CLASS_NAME, 'pcsearch')
         if element:
             element[0].location_once_scrolled_into_view
     # if object not found, return False
@@ -884,13 +869,13 @@ def get_point_total(pc=False, mobile=False, log=False):
 
     try:
         current_point_total = list(map(
-            int, browser.find_element_by_class_name('credits2').text.split(' of ')))[0]
+            int, browser.find_element(By.CLASS_NAME, 'credits2').text.split(' of ')))[0]
         # get pc points
         current_pc_points, max_pc_points = map(
-            int, browser.find_element_by_class_name('pcsearch').text.split('/'))
+            int, browser.find_element(By.CLASS_NAME, 'pcsearch').text.split('/'))
         # get mobile points
         current_mobile_points, max_mobile_points = map(
-            int, browser.find_element_by_class_name('mobilesearch').text.split('/'))
+            int, browser.find_element(By.CLASS_NAME, 'mobilesearch').text.split('/'))
         # get edge points
         # TODO
     except ValueError:
@@ -983,8 +968,10 @@ def ensure_mobile_mode_logged_in():
 
 if __name__ == '__main__':
     check_python_version()
-    if os.path.exists("drivers/chromedriver.exe"):
-        update_driver()
+    # This function is not a reliable way to update the driver.
+    # The script will automatically download the correct driver if it's missing.
+    # if os.path.exists("drivers/chromedriver.exe"):
+    #     update_driver()
     try:
         # argparse
         parser = parse_args()
