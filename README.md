@@ -26,12 +26,12 @@ This program will automatically complete search requests and quizzes on Microsof
 
 ## How to Use
 
-1.  Clone and navigate to repo
-2.  Modify `ms_rewards_login_dict.json` with your account names and passwords,
+1. Clone and navigate to repo
+2. Modify `ms_rewards_login_dict.json` with your account names and passwords,
     remove `.example` from filename.
-3.  Enter into cmd/terminal/shell: `pip install -r requirements.txt`
+3. Enter into cmd/terminal/shell: `pip install -r requirements.txt`
     - This installs dependencies (selenium)
-4.  Enter into cmd/terminal/shell: `python ms_rewards.py --headless --mobile --pc --quiz`
+4. Enter into cmd/terminal/shell: `python ms_rewards.py --headless --mobile --pc --quiz`
     - enter `-h` or `--help` for more instructions
     - `--headless` is for headless mode
     - `--mobile` is for mobile search
@@ -47,14 +47,14 @@ This program will automatically complete search requests and quizzes on Microsof
     - Script by default will run in interactive mode
     - Run time for one account is under 5 minutes, for 100% daily completion
     - If python environment variable is not set, enter `/path/to/python/executable ms_rewards.py`
-5.  For completing points from email links:
+5. For completing points from email links:
     - Modify email_links.txt file with email links. - Copy and paste links without surrounding quotes, each on individual line, like such:
           httplink2
           httplink3
     - Enter cmd/terminal/shell argument `python ms_rewards.py --email`
     - **Script will be manual, requires key press to continue, as the quizzes
       are not yet standardized.**
-6.  Crontab (Optional for automated script daily on linux)
+6. Crontab (Optional for automated script daily on linux)
     - Enter in terminal: `crontab -e`
     - Enter in terminal: `0 12 * * * /path/to/python /path/to/ms_rewards.py --headless --mobile --pc --quiz`
       - Can change the time from 12am server time to whenever the MS daily searches reset (~12am PST)
@@ -83,6 +83,6 @@ For a summary of changes in each version of the bot, please see the
 **[all commits to LjMario007/master](https://github.com/LjMario007/Microsoft-Rewards-Bot/commits/master)**
 is also available.
 
-#### Special Thanks
+### Special Thanks
 
 @ShoGinn - for extraordinary assistance in making this project better!
