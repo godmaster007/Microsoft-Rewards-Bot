@@ -1,0 +1,22 @@
+# Terminal Environment Changes
+
+## Extension: GitHub.copilot-chat
+
+Enables use of the `copilot-debug` command in the terminal.
+
+- `PATH=${env:PATH};c:\Users\nicho\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\debugCommand`
+
+## Extension: vscode.git
+
+Enables the following features: git auth provider
+
+- `GIT_ASKPASS=c:\Users\nicho\AppData\Local\Programs\Microsoft VS Code\resources\app\extensions\git\dist\askpass.sh`
+- `VSCODE_GIT_ASKPASS_NODE=C:\Users\nicho\AppData\Local\Programs\Microsoft VS Code\Code.exe`
+- `VSCODE_GIT_ASKPASS_EXTRA_ARGS=`
+- `VSCODE_GIT_ASKPASS_MAIN=c:\Users\nicho\AppData\Local\Programs\Microsoft VS Code\resources\app\extensions\git\dist\askpass-main.js`
+- `VSCODE_GIT_IPC_HANDLE=\\.\pipe\vscode-git-ec164ff455-sock`
+
+## Extension: ms-python.python
+
+- `PYTHONSTARTUP=c:\Users\nicho\AppData\Roaming\Code\User\workspaceStorage\748c993167289d15b57ae09728a6ef01\ms-python.python\pythonrc.py`
+- `PYTHON_BASIC_REPL=1`
