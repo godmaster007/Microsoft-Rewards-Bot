@@ -125,8 +125,28 @@ def init_logging(log_level):
 
     # Provide safe logging wrappers that write directly to the temp file to avoid handler issues
     def _safe_call(level_name, msg):
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        line = f"{timestamp} :: {level_name} :: {msg}\n"
+        # Accept optional args/kwargs to capture exc_info from callers
+        def _format_message(message, exc_info_flag=False):
+            ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            base = f"{ts} :: {level_name} :: {message}\n"
+            if exc_info_flag:
+                try:
+                    import traceback
+                    stack = traceback.format_exc()
+                    return base + stack + "\n"
+                except Exception:
+                    return base
+            return base
+
+        # Determine if caller requested exception info
+        exc_info_flag = False
+        try:
+            # If there's an active exception, include traceback
+            exc_info_flag = sys.exc_info() != (None, None, None)
+        except Exception:
+            exc_info_flag = False
+
+        line = _format_message(msg, exc_info_flag=exc_info_flag)
         try:
             with open(temp_log_path, 'a', encoding='utf-8') as fh:
                 fh.write(line)
@@ -142,7 +162,10 @@ def init_logging(log_level):
     logging.error = lambda msg, *a, **k: _safe_call('ERROR', msg)
     logging.debug = lambda msg, *a, **k: _safe_call('DEBUG', msg)
     logging.critical = lambda msg, *a, **k: _safe_call('CRITICAL', msg)
-    logging.exception = lambda msg, *a, **k: _safe_call('EXCEPTION', msg)
+    # Ensure exception logging captures stack traces when called inside except blocks
+    def _exception_logger(msg, *a, **k):
+        _safe_call('EXCEPTION', msg)
+    logging.exception = _exception_logger
 
 
 def parse_args():
@@ -352,8 +375,39 @@ def browser_setup(headless_mode, user_agent):
     if system == "Windows":
         if not path.endswith(".exe"):
             path += ".exe"
+    # If chromedriver not present in repo drivers, but exists in temp drivers, try to copy it into repo drivers
+    temp_drivers_dir = os.path.join(tempfile.gettempdir(), 'ms_rewards_drivers')
+    temp_driver_path = os.path.join(temp_drivers_dir, 'chromedriver.exe' if system == 'Windows' else 'chromedriver')
+
+    # Ensure drivers_dir exists (try again if earlier fallback selected temp folder)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    except Exception:
+        pass
+
     if not os.path.exists(path):
+        # Prefer using driver from temp drivers folder if available
+        try:
+            if os.path.exists(temp_driver_path) and not os.path.exists(path):
+                try:
+                    # Attempt to copy temp driver into repo drivers dir to make it persistent
+                    shutil.copy2(temp_driver_path, path)
+                    try:
+                        os.chmod(path, 0o755)
+                    except Exception:
+                        pass
+                    logging.info(msg=f'Copied chromedriver from temp folder to {path}')
+                except Exception as e:
+                    logging.warning(msg=f'Could not copy chromedriver from temp folder: {e}')
+        except Exception:
+            # ignore copy errors and fallback to download
+            pass
+
+    if not os.path.exists(path):
+        logging.info(msg=f'Chromedriver not found at {path}; downloading into {os.path.dirname(path)}')
         download_driver(path, system)
+    else:
+        logging.info(msg=f'Using chromedriver at: {path}')
 
     options = Options()
     options.add_argument(f'user-agent={user_agent}')
@@ -372,11 +426,47 @@ def browser_setup(headless_mode, user_agent):
     if headless_mode:
         options.add_argument('--headless')
 
+    # If driver path points to a folder (chromedriver_win32), try to resolve executable inside it
+    if os.path.isdir(path):
+        candidate = os.path.join(path, 'chromedriver.exe' if system == 'Windows' else 'chromedriver')
+        if os.path.exists(candidate):
+            path = candidate
+
+    # If there's an extracted folder (chromedriver_win32) inside drivers_dir, prefer that executable
+    extracted_folder = os.path.join(drivers_dir, 'chromedriver_win32')
+    if os.path.isdir(extracted_folder):
+        candidate = os.path.join(extracted_folder, 'chromedriver.exe' if system == 'Windows' else 'chromedriver')
+        if os.path.exists(candidate):
+            path = candidate
+
+    # Log the final chromedriver path and size for diagnostics
+    try:
+        size = os.path.getsize(path)
+    except Exception:
+        size = None
+    logging.info(msg=f'Final chromedriver path: {path} size={size}')
+
     # initialize chrome webdriver with explicit Service (works with selenium 4+ and 3)
     service = Service(path)
-    chrome_obj = webdriver.Chrome(service=service, options=options)
-
-    return chrome_obj
+    try:
+        chrome_obj = webdriver.Chrome(service=service, options=options)
+        return chrome_obj
+    except Exception as e:
+        logging.warning(msg=f'Initial webdriver start failed: {e}')
+        # Try to remove experimental w3c option and retry with minimal options
+        try:
+            # Remove w3c option if present and retry
+            try:
+                options._experimental_options.pop('w3c', None)
+            except Exception:
+                pass
+            # create a fresh Service and attempt again
+            service = Service(path)
+            chrome_obj = webdriver.Chrome(service=service, options=options)
+            return chrome_obj
+        except Exception as e2:
+            logging.exception(msg=f'Failed to start Chrome WebDriver after retry: {e2}')
+            raise
 
 
 def log_in(email_address, pass_word):
@@ -1078,6 +1168,12 @@ if __name__ == '__main__':
 
         # start logging
         init_logging(log_level=parser.log_level)
+        # record where log file and drivers folder will be located for debugging
+        try:
+            logging.info(msg=f"Temp run log: {os.path.join(tempfile.gettempdir(), 'ms_rewards_run.log')}")
+            logging.info(msg=f"Repo drivers dir (expected): {os.path.join(os.path.dirname(os.path.realpath(__file__)), 'drivers')}")
+        except Exception:
+            pass
         logging.info(msg='--------------------------------------------------')
         logging.info(msg='-----------------------New------------------------')
         logging.info(msg='--------------------------------------------------')
